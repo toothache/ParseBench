@@ -16,33 +16,16 @@ LLAMAEXTRACT_V2_AGENTIC_HOSTED_GRANULAR_PARSE_CONFIG = {
 }
 
 
-def _extract_product_type() -> Any:
-    extract_type = getattr(ProductType, "EXTRACT", None)
-    if extract_type is not None:
-        return extract_type
-    return "extract"
-
-
 def _pipeline_spec(
     *,
     pipeline_name: str,
     provider_name: str,
     config: dict[str, Any],
 ) -> PipelineSpec:
-    product_type = _extract_product_type()
-    if isinstance(product_type, ProductType):
-        return PipelineSpec(
-            pipeline_name=pipeline_name,
-            provider_name=provider_name,
-            product_type=product_type,
-            config=config,
-        )
-
-    # Temporary compatibility while the schema lane adds ProductType.EXTRACT.
-    return PipelineSpec.model_construct(
+    return PipelineSpec(
         pipeline_name=pipeline_name,
         provider_name=provider_name,
-        product_type=product_type,
+        product_type=ProductType.EXTRACT,
         config=config,
     )
 
