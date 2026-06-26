@@ -315,6 +315,7 @@ class LayoutDetectionModel(StrEnum):
     GEMMA4_LAYOUT = "gemma4_layout"
     DATABRICKS_LAYOUT = "databricks_layout"
     INFINITY_PARSER2_LAYOUT = "infinity_parser2_layout"
+    AZURE_CONTENT_UNDERSTANDING_LAYOUT = "azure_content_understanding_layout"
 
 
 LAYOUT_MODEL_INFO: dict[LayoutDetectionModel, dict[str, str]] = {
@@ -389,6 +390,10 @@ LAYOUT_MODEL_INFO: dict[LayoutDetectionModel, dict[str, str]] = {
     LayoutDetectionModel.AZURE_DI_LAYOUT: {
         "name": "Azure Document Intelligence Layout",
         "hf_url": "https://azure.microsoft.com/en-us/products/ai-services/ai-document-intelligence",
+    },
+    LayoutDetectionModel.AZURE_CONTENT_UNDERSTANDING_LAYOUT: {
+        "name": "Azure Content Understanding Layout",
+        "hf_url": "https://azure.microsoft.com/en-us/products/ai-services/ai-content-understanding",
     },
     LayoutDetectionModel.GOOGLE_DOCAI_LAYOUT: {
         "name": "Google Document AI Layout",

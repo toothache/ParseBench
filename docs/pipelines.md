@@ -100,6 +100,16 @@ These pipelines use hosted APIs. You only need an API key in your `.env` file.
 | **`azure_di_layout`** | Layout model (In paper: *Azure Document Intelligence*) | `AZURE_DOCUMENT_INTELLIGENCE_KEY`, `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` |
 | `azure_di_read` | Read model | `AZURE_DOCUMENT_INTELLIGENCE_KEY`, `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` |
 
+### Azure AI Content Understanding
+
+Newer generative multimodal analysis service (distinct from Document Intelligence). Uses the async analyze REST API (`api-version=2025-11-01`, `prebuilt-document`). The default pipeline derives a custom analyzer with figure analysis enabled so charts/figures are described inline in the markdown.
+
+| Pipeline | Description | Env Vars |
+|---|---|---|
+| **`azure_content_understanding`** | prebuilt-document + figure analysis (charts/figures described inline) | `AZURE_CONTENT_UNDERSTANDING_KEY`, `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` |
+| **`azure_content_understanding_layout`** | prebuilt-layout (OCR + layout + tables, no figure/chart understanding — clean baseline) | `AZURE_CONTENT_UNDERSTANDING_KEY`, `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` |
+| `azure_content_understanding_document` | prebuilt-document (OCR + layout + tables, no figure analysis) | `AZURE_CONTENT_UNDERSTANDING_KEY`, `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` |
+
 ### AWS Textract
 
 | Pipeline | Description | Env Vars |

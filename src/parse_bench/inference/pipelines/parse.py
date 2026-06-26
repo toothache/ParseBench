@@ -350,6 +350,65 @@ def register_parse_pipelines(register_fn) -> None:  # type: ignore[no-untyped-de
         )
     )
 
+    # ===========================
+    # Azure AI Content Understanding
+    # ===========================
+
+    # Content Understanding is the newer generative multimodal analysis service
+    # (distinct from Document Intelligence). The default pipeline uses
+    # prebuilt-documentSearch, which performs figure analysis and returns
+    # structured Chart.js chart data; the provider renders that chart data as
+    # markdown tables so chart data points are scored. Requires the resource's
+    # backing GPT model deployments (autodeploy on by default).
+    register_fn(
+        PipelineSpec(
+            pipeline_name="azure_content_understanding",
+            provider_name="azure_content_understanding",
+            product_type=ProductType.PARSE,
+            config={
+                "analyzer_id": "prebuilt-documentSearch",
+                "api_version": "2025-11-01",
+                "enable_figure_analysis": True,
+                "create_custom_analyzer": False,
+                "table_format": "html",
+                "chart_format": "chartjs",
+            },
+        )
+    )
+
+    # Plain prebuilt-layout analyzer (no figure/chart understanding) — OCR +
+    # layout + tables + figure location only. Direct analogue of azure_di_layout
+    # and the right clean baseline to compare figure analysis against.
+    register_fn(
+        PipelineSpec(
+            pipeline_name="azure_content_understanding_layout",
+            provider_name="azure_content_understanding",
+            product_type=ProductType.PARSE,
+            config={
+                "analyzer_id": "prebuilt-layout",
+                "api_version": "2025-11-01",
+                "enable_figure_analysis": False,
+                "table_format": "html",
+            },
+        )
+    )
+
+    # Plain prebuilt-document analyzer (no custom figure analysis) — OCR +
+    # layout + tables, charts left as figure references.
+    register_fn(
+        PipelineSpec(
+            pipeline_name="azure_content_understanding_document",
+            provider_name="azure_content_understanding",
+            product_type=ProductType.PARSE,
+            config={
+                "analyzer_id": "prebuilt-document",
+                "api_version": "2025-11-01",
+                "enable_figure_analysis": False,
+                "table_format": "html",
+            },
+        )
+    )
+
     # =========================================================================
     # AWS Textract Pipelines
     # =========================================================================
