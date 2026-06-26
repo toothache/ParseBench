@@ -64,7 +64,7 @@ class AnalysisCLI:
                     try:
                         import json
 
-                        with open(metadata_path) as f:
+                        with open(metadata_path, encoding="utf-8") as f:
                             metadata = json.load(f)
                         if "test_cases_dir" in metadata:
                             candidate = Path(metadata["test_cases_dir"])
@@ -204,7 +204,7 @@ class AnalysisCLI:
                     return 1
 
             print(f"Loading evaluation summary from: {summary_json_path}")
-            with open(summary_json_path) as f:
+            with open(summary_json_path, encoding="utf-8") as f:
                 summary_data = json.load(f)
             summary = EvaluationSummary.model_validate(summary_data)
 
@@ -216,7 +216,7 @@ class AnalysisCLI:
                     metadata_path = evaluation_path.parent / "_metadata.json"
                 if metadata_path.exists():
                     try:
-                        with open(metadata_path) as f:
+                        with open(metadata_path, encoding="utf-8") as f:
                             metadata = json.load(f)
                         if "test_cases_dir" in metadata:
                             candidate = Path(metadata["test_cases_dir"])
@@ -234,7 +234,7 @@ class AnalysisCLI:
                     metadata_path = evaluation_path.parent / "_metadata.json"
                 if metadata_path.exists():
                     try:
-                        with open(metadata_path) as f:
+                        with open(metadata_path, encoding="utf-8") as f:
                             metadata = json.load(f)
                         if "output_dir" in metadata:
                             candidate = Path(metadata["output_dir"])

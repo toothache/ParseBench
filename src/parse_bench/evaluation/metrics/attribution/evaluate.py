@@ -122,9 +122,9 @@ def evaluate_single_page(
     :return: (AttributionResult, error_message or None)
     """
     try:
-        with open(gt_path) as f:
+        with open(gt_path, encoding="utf-8") as f:
             gt_data = json.load(f)
-        with open(output_path) as f:
+        with open(output_path, encoding="utf-8") as f:
             result_data = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError) as e:
         return AttributionResult(), str(e)
@@ -437,7 +437,7 @@ def main():  # type: ignore[no-untyped-def]
                 for p in report.pages
             ],
         }
-        with open(args.json_output, "w") as f:
+        with open(args.json_output, "w", encoding="utf-8") as f:
             json.dump(json_data, f, indent=2)
         print(f"\nJSON report saved to: {args.json_output}")
 

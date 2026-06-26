@@ -87,7 +87,7 @@ class PipelineComparison:
         if not eval_report_path.exists():
             return None
         try:
-            with open(eval_report_path) as f:
+            with open(eval_report_path, encoding="utf-8") as f:
                 data = json.load(f)
             return EvaluationSummary.model_validate(data)
         except Exception:
@@ -115,7 +115,7 @@ class PipelineComparison:
                 return None
 
         try:
-            with open(result_path) as f:
+            with open(result_path, encoding="utf-8") as f:
                 data = json.load(f)
             return InferenceResult.model_validate(data)
         except Exception:

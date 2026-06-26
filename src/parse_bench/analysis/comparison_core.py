@@ -24,7 +24,7 @@ def load_evaluation_report(pipeline_path: Path) -> dict | None:
     if not report_file.exists():
         return None
     try:
-        with open(report_file) as f:
+        with open(report_file, encoding="utf-8") as f:
             return json.load(f)  # type: ignore[no-any-return]
     except Exception:
         return None
@@ -49,7 +49,7 @@ def load_inference_result(pipeline_path: Path, test_id: str) -> dict | None:
             return None
 
     try:
-        with open(result_path) as f:
+        with open(result_path, encoding="utf-8") as f:
             return json.load(f)  # type: ignore[no-any-return]
     except Exception:
         return None
