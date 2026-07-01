@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_MODULES = [
     "anthropic",
+    "azure_content_understanding",
     "azure_document_intelligence",
     "chandra2",
     "chunkr",
