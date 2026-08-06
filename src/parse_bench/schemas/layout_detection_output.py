@@ -314,6 +314,7 @@ class LayoutDetectionModel(StrEnum):
     OPENAI_LAYOUT = "openai_layout"
     ANTHROPIC_LAYOUT = "anthropic_layout"
     GEMMA4_LAYOUT = "gemma4_layout"
+    MISTRAL_OCR_LAYOUT = "mistral_ocr_layout"
     DATABRICKS_LAYOUT = "databricks_layout"
     INFINITY_PARSER2_LAYOUT = "infinity_parser2_layout"
 

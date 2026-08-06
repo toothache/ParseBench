@@ -960,6 +960,7 @@ def _parse_with_layout_to_layout_output(
     *,
     model: LayoutDetectionModel,
     page_filter: int | None = None,
+    numeric_labels: bool = True,
 ) -> LayoutOutput:
     """Shared conversion for LLM parse_with_layout adapters (Google/OpenAI/Anthropic)."""
     # Handle LayoutOutput (e.g. from multi-task re-evaluation)
@@ -997,7 +998,11 @@ def _parse_with_layout_to_layout_output(
 
                 lookup_key = str_label.lower().replace("-", "_")
                 qwen_enum = QWEN3VL_STR_TO_LABEL.get(lookup_key)
-                int_label = str(int(qwen_enum)) if qwen_enum is not None else str_label
+                output_label = (
+                    str(int(qwen_enum))
+                    if numeric_labels and qwen_enum is not None
+                    else str_label
+                )
 
                 # Convert normalized [0,1] xywh -> pixel xyxy
                 x1 = seg.x * page_w
@@ -1011,7 +1016,7 @@ def _parse_with_layout_to_layout_output(
                     LayoutPrediction(
                         bbox=[x1, y1, x2, y2],
                         score=float(seg.confidence or 1.0),
-                        label=int_label,
+                        label=output_label,
                         page=page_number,
                         content=content,
                         provider_metadata={
@@ -1029,6 +1034,32 @@ def _parse_with_layout_to_layout_output(
         image_height=max(output_height, 1),
         predictions=predictions,
     )
+
+
+@register_layout_adapter("mistral_ocr", priority=90)
+class MistralOCRLayoutAdapter(LayoutAdapter):
+    """Convert Mistral OCR block-derived layout pages for layout evaluation."""
+
+    @classmethod
+    def matches(cls, inference_result: InferenceResult) -> bool:
+        return (
+            isinstance(inference_result.output, ParseOutput)
+            and bool(inference_result.output.layout_pages)
+            and inference_result.pipeline_name.startswith("mistral_ocr")
+        )
+
+    def to_layout_output(
+        self,
+        inference_result: InferenceResult,
+        *,
+        page_filter: int | None = None,
+    ) -> LayoutOutput:
+        return _parse_with_layout_to_layout_output(
+            inference_result,
+            model=LayoutDetectionModel.MISTRAL_OCR_LAYOUT,
+            page_filter=page_filter,
+            numeric_labels=False,
+        )
 
 
 @register_layout_adapter("google", priority=90)
