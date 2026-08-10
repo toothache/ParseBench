@@ -99,12 +99,15 @@ def _build_data_blob(
     output_dir: Path | None = None,
     test_cases_dir: Path | None = None,
     pdf_base_url: str = "",
+    group: str | None = None,
 ) -> dict[str, Any]:
     """Build the JSON data blob that powers the client-side rendering."""
 
     # --- load predicted/expected output from files ---
     predicted_map: dict[str, str] = {}
     expected_map: dict[str, str] = {}
+    jsonl_expected_map: dict[tuple[str, str], str] = {}
+    checks_map: dict[tuple[str, str], list[dict[str, Any]]] = {}
     job_id_map: dict[str, str] = {}
     parse_job_logs_url_map: dict[str, str] = {}
     parse_job_logs_local_path_map: dict[str, str] = {}
@@ -158,6 +161,76 @@ def _build_data_blob(
                     expected_map[test_id] = json.dumps(data["expected_output"], indent=2, ensure_ascii=False)
             except Exception:
                 pass
+
+        # Hugging Face datasets use category JSONL files instead of sidecars.
+        # Preserve sidecar and expected-markdown precedence, then show the
+        # evaluator checks when no rendered reference output exists.
+        expected_markdown_path = test_cases_dir / "expected_markdown.json"
+        expected_markdown_lookup: dict[str, str] = {}
+        if expected_markdown_path.is_file():
+            try:
+                expected_markdown_lookup = json.loads(expected_markdown_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as exc:
+                raise ValueError(f"Invalid expected Markdown map at {expected_markdown_path}: {exc}") from exc
+
+        wanted_test_ids = {result.test_id.rsplit("/", 1)[-1] for result in summary.per_example_results}
+        dataset_files = [test_cases_dir / f"{group}.jsonl"] if group else list(test_cases_dir.glob("*.jsonl"))
+        for dataset_file in dataset_files:
+            if not dataset_file.is_file():
+                continue
+            category = dataset_file.stem
+            with dataset_file.open(encoding="utf-8") as dataset:
+                for line_number, line in enumerate(dataset, start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(f"Invalid JSONL at {dataset_file}:{line_number}: {exc}") from exc
+                    if not isinstance(data, dict):
+                        raise ValueError(
+                            f"Expected JSON object at {dataset_file}:{line_number}, got {type(data).__name__}"
+                        )
+
+                    pdf = data.get("pdf")
+                    if not isinstance(pdf, str) or not pdf:
+                        continue
+                    test_id = Path(pdf).stem
+                    if test_id not in wanted_test_ids:
+                        continue
+
+                    key = (category, test_id)
+                    if data.get("expected_markdown"):
+                        jsonl_expected_map.setdefault(key, data["expected_markdown"])
+                    elif data.get("expected_output"):
+                        jsonl_expected_map.setdefault(
+                            key,
+                            json.dumps(data["expected_output"], indent=2, ensure_ascii=False),
+                        )
+                    elif data.get("type") == "expected_markdown":
+                        expected_markdown = expected_markdown_lookup.get(pdf)
+                        if expected_markdown:
+                            jsonl_expected_map.setdefault(key, expected_markdown)
+                    else:
+                        rule = data.get("rule")
+                        if isinstance(rule, str):
+                            try:
+                                rule = json.loads(rule)
+                            except json.JSONDecodeError as exc:
+                                raise ValueError(
+                                    f"Invalid rule JSON at {dataset_file}:{line_number}: {exc}"
+                                ) from exc
+                        if not isinstance(rule, dict):
+                            raise ValueError(
+                                f"Expected rule object at {dataset_file}:{line_number}, got {type(rule).__name__}"
+                            )
+
+                        check = {"type": data.get("type", ""), **rule}
+                        if data.get("id"):
+                            check["id"] = data["id"]
+                        if data.get("page") is not None:
+                            check["page"] = data["page"]
+                        checks_map.setdefault(key, []).append(check)
 
     # --- aggregate metrics (group avg/min/max) ---
     # Per-doc table count metrics are bookkeeping, not quality scores --
@@ -228,6 +301,25 @@ def _build_data_blob(
     # --- per-example data ---
     examples = []
     for result in summary.per_example_results:
+        short_test_id = result.test_id.rsplit("/", 1)[-1]
+        predicted_output = predicted_map.get(result.test_id) or predicted_map.get(short_test_id, "")
+        expected_output = expected_map.get(result.test_id) or expected_map.get(short_test_id, "")
+        result_categories = [group] if group else [tag for tag in result.tags if (tag, short_test_id) in checks_map]
+        if not result_categories and not group:
+            result_categories = [
+                category
+                for category, test_id in checks_map
+                if test_id == short_test_id
+            ]
+            result_categories.extend(
+                category
+                for category, test_id in jsonl_expected_map
+                if test_id == short_test_id and category not in result_categories
+            )
+        matched_category = result_categories[0] if len(result_categories) == 1 else None
+        expected_checks = checks_map.get((matched_category, short_test_id), []) if matched_category else []
+        if not expected_output and matched_category:
+            expected_output = jsonl_expected_map.get((matched_category, short_test_id), "")
         metrics_dict: dict[str, float] = {}
         rule_details: dict[str, dict[str, int]] = {}
         rule_results_map: dict[str, list[dict[str, Any]]] = {}
@@ -294,18 +386,11 @@ def _build_data_blob(
                 "ruleDetails": rule_details,
                 "ruleResults": rule_results_map,
                 "metricDetails": metric_details_map,
-                "predictedOutput": (
-                    predicted_map.get(result.test_id) or predicted_map.get(result.test_id.rsplit("/", 1)[-1], "")
-                ),
-                "expectedOutput": (
-                    expected_map.get(result.test_id) or expected_map.get(result.test_id.rsplit("/", 1)[-1], "")
-                ),
-                "predictedHtml": _render_markdown_to_html(
-                    predicted_map.get(result.test_id) or predicted_map.get(result.test_id.rsplit("/", 1)[-1], "")
-                ),
-                "expectedHtml": _render_markdown_to_html(
-                    expected_map.get(result.test_id) or expected_map.get(result.test_id.rsplit("/", 1)[-1], "")
-                ),
+                "predictedOutput": predicted_output,
+                "expectedOutput": expected_output,
+                "expectedChecks": expected_checks,
+                "predictedHtml": _render_markdown_to_html(predicted_output),
+                "expectedHtml": _render_markdown_to_html(expected_output),
             }
         )
 
@@ -1837,9 +1922,20 @@ function buildDetailPanel(ex) {
 
     // Expected output panel
     var expId = 'output-exp-' + ex.id.replace(/[^a-zA-Z0-9]/g, '_');
+    var hasExpected = ex.expectedOutput || (ex.expectedChecks && ex.expectedChecks.length);
+    var expectedRaw = ex.expectedOutput;
+    var expectedRendered = ex.expectedHtml;
+    if (!expectedRaw && ex.expectedChecks && ex.expectedChecks.length) {
+        var checkCount = ex.expectedChecks.length;
+        var checkNoun = checkCount === 1 ? 'check' : 'checks';
+        var checksJson = JSON.stringify(ex.expectedChecks, null, 2);
+        expectedRaw = 'Evaluation checks (' + checkCount + ' ' + checkNoun + ')\\n\\n```json\\n' + checksJson + '\\n```';
+        expectedRendered = '<p>Evaluation checks (' + checkCount + ' ' + checkNoun + ')</p>' +
+            '<div><pre><code>' + esc(checksJson) + '\\n</code></pre></div>';
+    }
     html += '<div class="output-panel" id="' + expId + '">';
     html += '<div class="output-panel-header"><span>Expected Output</span>';
-    if (ex.expectedOutput) {
+    if (hasExpected) {
         html += '<div class="output-view-toggle">' +
             '<button class="output-view-btn active" data-mode="rendered" onclick="event.stopPropagation();toggleOutputView(\'' + expId + '\',\'rendered\')">Rendered</button>' +
             '<button class="output-view-btn" data-mode="raw" onclick="event.stopPropagation();toggleOutputView(\'' + expId + '\',\'raw\')">Raw</button>' +
@@ -1847,9 +1943,9 @@ function buildDetailPanel(ex) {
             '<button class="output-copy-btn" onclick="event.stopPropagation();copyOutput(\'' + expId + '\',this)">Copy</button>';
     }
     html += '</div>';
-    if (ex.expectedOutput) {
-        html += '<div class="output-panel-body output-raw" style="display:none">' + esc(ex.expectedOutput) + '</div>';
-        html += '<div class="output-panel-body rendered-md output-rendered">' + (ex.expectedHtml || esc(ex.expectedOutput)) + '</div>';
+    if (hasExpected) {
+        html += '<div class="output-panel-body output-raw" style="display:none">' + esc(expectedRaw) + '</div>';
+        html += '<div class="output-panel-body rendered-md output-rendered">' + (expectedRendered || esc(expectedRaw)) + '</div>';
     } else {
         html += '<div class="output-panel-body"><span class="output-empty">No expected output available</span></div>';
     }
@@ -2165,6 +2261,7 @@ def generate_detailed_html_report(
         output_dir=output_dir,
         test_cases_dir=test_cases_dir,
         pdf_base_url=resolved_pdf_base_url,
+        group=group,
     )
 
     # Add run info to data blob
