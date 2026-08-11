@@ -219,7 +219,7 @@ class SentenceBagRule(ParseTestRule):
         md_content = _strip_fenced_code_blocks(md_content)
         md_content = _strip_and_replace_latex(md_content)
         md_content = SentenceBagRule._MARKDOWN_IMAGE_PATTERN.sub(" ", md_content)
-        md_content = _augment_with_table_cell_text(md_content)
+        md_content = _augment_with_table_cell_text(md_content, group_rows=True)
         md_content = normalize_text(md_content)
         md_content = SentenceBagRule._MULTI_DOT_PATTERN.sub(" ", md_content)
         md_content = _unescape_html_entities(md_content)
@@ -292,7 +292,7 @@ class SentenceBagRule(ParseTestRule):
         md_content = _strip_and_replace_latex(md_content)
         md_content = SentenceBagRule._MARKDOWN_IMAGE_PATTERN.sub(" ", md_content)
         if include_table_cells:
-            md_content = _augment_with_table_cell_text(md_content)
+            md_content = _augment_with_table_cell_text(md_content, group_rows=True)
         else:
             md_content = _strip_html_tables_and_content(md_content)
         md_content = SentenceBagRule._MULTI_DOT_PATTERN.sub(" ", md_content)

@@ -85,6 +85,10 @@ _DEFAULT_PARAGRAPH_LABEL = "Text"
 # parity with the Azure DI provider).
 _VIRTUAL_PAGE_DIM = 1000.0
 
+_PAGE_FURNITURE_COMMENT_PATTERN = re.compile(
+    r"<!--\s*(?:PageHeader|PageFooter|PageNumber)\s*:\s*(.*?)\s*-->",
+    flags=re.DOTALL,
+)
 
 
 @register_provider("azure_content_understanding")
@@ -300,8 +304,11 @@ def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPage
 
     # (label, nx, ny, nw, nh, content, confidence) grouped by page.
     pages_items: dict[int, list[tuple[str, float, float, float, float, str, float]]] = defaultdict(list)
+    page_headers: dict[int, list[str]] = defaultdict(list)
+    page_footers: dict[int, list[str]] = defaultdict(list)
+    page_numbers: dict[int, list[str]] = defaultdict(list)
 
-    def _add(label: str, source: str | None, text: str | None) -> None:
+    def _add(label: str, source: str | None, text: str | None) -> int:
         # Every layout element must carry a position; an empty source is a bug.
         if not source:
             raise ValueError(f"CU element '{label}' has no source polygon")
@@ -321,13 +328,22 @@ def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPage
         pw, ph = page_dims.get(page_num, (1.0, 1.0))
         nx, ny, nw, nh = _polygon_to_normalized_bbox(polygon, pw, ph)
         pages_items[page_num].append((label, nx, ny, nw, nh, text, 1.0))
+        return page_num
 
     for content in document_contents:
         # Paragraphs -> text / heading / header / footer elements.
         for para in content.paragraphs or []:
             role = para.role
             label = CU_LABEL_MAP.get(role, _DEFAULT_PARAGRAPH_LABEL) if role else _DEFAULT_PARAGRAPH_LABEL
-            _add(label, para.source, para.content)
+            page_num = _add(label, para.source, para.content)
+            text = para.content or ""
+            if role == "pageHeader" and text:
+                page_headers[page_num].append(text)
+            elif role == "pageFooter" and text:
+                page_footers[page_num].append(text)
+            elif role == "pageNumber" and text:
+                page_footers[page_num].append(text)
+                page_numbers[page_num].append(text)
 
         # Tables -> Table elements (CU table objects carry their own source).
         for table in content.tables or []:
@@ -357,6 +373,9 @@ def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPage
                 page_number=page_num,
                 width=_VIRTUAL_PAGE_DIM,
                 height=_VIRTUAL_PAGE_DIM,
+                page_header_markdown="\n".join(page_headers[page_num]),
+                page_footer_markdown="\n".join(page_footers[page_num]),
+                printed_page_number="\n".join(page_numbers[page_num]),
                 items=items,
             )
         )
@@ -740,4 +759,9 @@ def render_content_markdown(content: AnalysisContent) -> str:
     for start, stop, replacement in sorted(edits, reverse=True):
         md = md[:start] + replacement + md[stop:]
 
-    return md
+    return _make_page_furniture_visible(md)
+
+
+def _make_page_furniture_visible(markdown: str) -> str:
+    """Expose Azure CU page-furniture comment payloads as ordinary Markdown."""
+    return _PAGE_FURNITURE_COMMENT_PATTERN.sub(lambda match: match.group(1).strip(), markdown)

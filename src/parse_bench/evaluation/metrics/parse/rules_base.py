@@ -287,53 +287,68 @@ def _strip_html_tables_and_content(md_content: str) -> str:
     return stripped
 
 
-def _extract_table_cell_texts(md_content: str) -> list[str]:
-    """Extract non-empty cell texts from markdown and HTML tables.
+def _strip_markdown_tables_and_content(md_content: str) -> str:
+    """Remove markdown tables using the same consecutive-pipe-line heuristic as the parser."""
+    lines = md_content.splitlines()
+    stripped_lines: list[str] = []
+    pipe_run: list[str] = []
 
-    This is used by missing-content bag rules so table content remains searchable
-    while still allowing per-cell sentence/word extraction behavior.
+    def _flush_pipe_run() -> None:
+        if len(pipe_run) < 2:
+            stripped_lines.extend(pipe_run)
+        elif stripped_lines and stripped_lines[-1]:
+            stripped_lines.append("")
+        pipe_run.clear()
 
-    In addition to individual cell texts, concatenated row texts are emitted so
-    that sentences spanning multiple cells in the same row can be matched as
-    contiguous substrings after normalization.
+    for line in lines:
+        if "|" in line:
+            pipe_run.append(line)
+        else:
+            _flush_pipe_run()
+            stripped_lines.append(line)
+    _flush_pipe_run()
+    return "\n".join(stripped_lines)
+
+
+def _extract_table_cell_texts(md_content: str, *, group_rows: bool = False) -> list[str]:
+    """Extract non-empty cell or row texts from markdown and HTML tables.
+
+    Cell mode keeps cells independent for sentence/word tokenization. Row mode
+    emits each cell exactly once while allowing substring matches across cells.
     """
-    cell_texts: list[str] = []
+    table_texts: list[str] = []
 
     for table in parse_markdown_tables(md_content):
         for row in table.data:
-            row_parts: list[str] = []
-            for cell in row:
-                text = str(cell).strip()
-                if text:
-                    cell_texts.append(text)
-                    row_parts.append(text)
-            if len(row_parts) > 1:
-                cell_texts.append(" ".join(row_parts))
+            row_parts = [str(cell).strip() for cell in row if str(cell).strip()]
+            if group_rows and row_parts:
+                table_texts.append(" ".join(row_parts))
+            else:
+                table_texts.extend(row_parts)
 
     for table in parse_html_tables(md_content):
         for row in table.data:
-            row_parts = []
-            for cell in row:
-                text = str(cell).strip()
-                if text:
-                    cell_texts.append(text)
-                    row_parts.append(text)
-            if len(row_parts) > 1:
-                cell_texts.append(" ".join(row_parts))
+            row_parts = [str(cell).strip() for cell in row if str(cell).strip()]
+            if group_rows and row_parts:
+                table_texts.append(" ".join(row_parts))
+            else:
+                table_texts.extend(row_parts)
 
-    return cell_texts
+    return table_texts
 
 
-def _augment_with_table_cell_text(md_content: str) -> str:
-    """Append table cell text to content without removing original markdown.
+def _augment_with_table_cell_text(md_content: str, *, group_rows: bool = False) -> str:
+    """Replace tables with their cell text without duplicating occurrences.
 
-    Why: missing_* rules should search substrings everywhere (including tables)
-    and treat each table cell as an independent text unit for splitting.
+    Cell mode supports independent tokenization. Row mode supports contiguous
+    substring matching across adjacent cells.
     """
-    cell_texts = _extract_table_cell_texts(md_content)
-    if not cell_texts:
+    table_texts = _extract_table_cell_texts(md_content, group_rows=group_rows)
+    if not table_texts:
         return md_content
-    return f"{md_content}\n" + "\n".join(cell_texts)
+    prose = _strip_markdown_tables_and_content(_strip_html_tables_and_content(md_content)).strip()
+    replacement = "\n".join(table_texts)
+    return f"{prose}\n{replacement}" if prose else replacement
 
 
 def _unescape_html_entities(text: str) -> str:
