@@ -317,3 +317,96 @@ normalization differences, including URL and section-number boundaries.
 
 That result supports the provider-specific page-furniture fix. It does not, by
 itself, validate a broader table metric change.
+
+## Post-fix production regression findings
+
+The span-based page-furniture normalization was replayed over all 2,078
+production Azure CU responses. Content Faithfulness improved overall, but 19
+of the 506 text cases scored lower than the pre-fix run.
+
+### Overlapping edits are not the cause
+
+The chart and page-furniture replacements share offsets into the original CU
+Markdown. Applying an overlapping child edit after its parent could corrupt the
+already-replaced text, so edit application now uses these rules:
+
+1. sort by end offset descending;
+2. for equal end offsets, put the smaller start offset first so the parent wins;
+3. apply the first edit;
+4. skip and log every later edit whose original span overlaps it.
+
+Replaying all 2,078 production responses encountered zero overlapping edits.
+Re-evaluating the 19 regressed cases produced exactly the same scores as the
+span-based normalization. The overlap guard is therefore a defensive
+correctness fix, not a fix for the observed regressions.
+
+### Separate issue: semantic comments inside figure alt text
+
+Some CU Markdown places a page-furniture comment inside an image alt:
+
+```markdown
+![Claude<!-- PageFooter: ABNASIA.ORG -->
+](figures/1.1)
+```
+
+Replacing only the comment span produces:
+
+```markdown
+![ClaudeABNASIA.ORG
+](figures/1.1)
+```
+
+Content Faithfulness removes Markdown images before text comparison, so the
+footer remains invisible. The replacement also removes the token boundary
+between `Claude` and `ABNASIA.ORG`. This caused the largest observed
+regression, in `text_misc__anthropicFirstPage`.
+
+This is a figure-alt serialization question, not an overlapping-edit problem.
+A future change must define whether image alt text participates in text
+evaluation and how semantic page furniture should be represented when CU
+places it inside an image.
+
+### Separate issue: image Markdown inside semantic comments
+
+CU also emits image Markdown inside a page-furniture comment:
+
+```markdown
+<!-- PageFooter: ![THE HOME DEPOT](figures/1.1) -->
+```
+
+The typed paragraph spans can cover only pieces of the image alt text. Replacing
+those pieces does not remove the enclosing HTML comment, so the content remains
+hidden. The production responses contain 188 page-furniture spans in this
+shape. This case requires an explicit decision about image and alt-text
+serialization rather than generic span-overlap handling.
+
+### Separate issue: typed text can flatten split Markdown links
+
+For `text_simple__links`, the original comment contains adjacent Markdown links
+whose display labels form one URL:
+
+```markdown
+[.../p](.../publications) [ublications](.../publications)
+```
+
+The typed CU paragraph content flattens that to:
+
+```text
+.../p ublications
+```
+
+The inserted space changes word and sentence matching. Unwrapping the original
+Markdown payload globally is not safe because link destinations can then be
+counted as additional text. Any repair should be limited to adjacent fragments
+that share the same destination and should be reviewed separately.
+
+### Broad prototype result
+
+A structure-aware prototype that also moved page furniture outside images and
+repaired split links improved 29 cases, regressed 36 cases, and left 441 cases
+unchanged relative to the span-based production result. It fixed the main
+malformed-Markdown examples, but newly exposed image-wrapped furniture also
+created annotation penalties.
+
+For that reason, figure-alt handling and link reconstruction are intentionally
+not part of the overlap guard committed on this branch.
