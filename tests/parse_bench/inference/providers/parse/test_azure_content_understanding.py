@@ -27,10 +27,10 @@ def test_render_content_markdown_exposes_standalone_page_furniture():
         content="Company",
     )
 
-    assert render_content_markdown(_content(markdown, paragraph)) == "Body\n\nCompany"
+    assert render_content_markdown(_content(markdown, paragraph)) == "Body\n\n Company "
 
 
-def test_render_content_markdown_keeps_figure_alt_handling_unchanged():
+def test_render_content_markdown_preserves_boundaries_inside_figure_alt():
     markdown = "![Claude<!-- PageFooter: ABNASIA.ORG -->\n](figures/1.1)"
     paragraph = _paragraph(
         markdown,
@@ -40,7 +40,7 @@ def test_render_content_markdown_keeps_figure_alt_handling_unchanged():
     )
 
     assert render_content_markdown(_content(markdown, paragraph)) == (
-        "![ClaudeABNASIA.ORG\n](figures/1.1)"
+        "![Claude ABNASIA.ORG \n](figures/1.1)"
     )
 
 
@@ -59,7 +59,7 @@ def test_render_content_markdown_keeps_parent_and_skips_nested_edit(caplog):
         content="child",
     )
 
-    assert render_content_markdown(_content(markdown, parent, child)) == "Parent CHILD"
+    assert render_content_markdown(_content(markdown, parent, child)) == " Parent CHILD "
     assert "skipping_overlapping_cu_markdown_edit" in caplog.text
 
 
@@ -76,7 +76,7 @@ def test_render_content_markdown_skips_partial_overlap(caplog):
         span=SimpleNamespace(offset=2, length=4),
     )
 
-    assert render_content_markdown(_content(markdown, parent, partial)) == "abcdPARENT"
+    assert render_content_markdown(_content(markdown, parent, partial)) == "abcd PARENT "
     assert "skipping_overlapping_cu_markdown_edit" in caplog.text
 
 
@@ -96,5 +96,5 @@ def test_render_content_markdown_keeps_reverse_applied_edits_disjoint():
     )
 
     assert render_content_markdown(_content(markdown, header, page_number)) == (
-        "Header\n\nBody\n\n3"
+        " Header \n\nBody\n\n 3 "
     )

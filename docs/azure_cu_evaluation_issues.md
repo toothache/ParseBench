@@ -349,7 +349,7 @@ Some CU Markdown places a page-furniture comment inside an image alt:
 ](figures/1.1)
 ```
 
-Replacing only the comment span produces:
+Replacing only the comment span without preserving token boundaries produces:
 
 ```markdown
 ![ClaudeABNASIA.ORG
@@ -360,6 +360,11 @@ Content Faithfulness removes Markdown images before text comparison, so the
 footer remains invisible. The replacement also removes the token boundary
 between `Claude` and `ABNASIA.ORG`. This caused the largest observed
 regression, in `text_misc__anthropicFirstPage`.
+
+Page-furniture replacements now include surrounding spaces, producing
+`![Claude ABNASIA.ORG ](...)`. This preserves word boundaries for rules that
+tokenize image alt text, but does not make the footer visible to sentence rules
+that remove Markdown images.
 
 This is a figure-alt serialization question, not an overlapping-edit problem.
 A future change must define whether image alt text participates in text
@@ -380,25 +385,36 @@ hidden. The production responses contain 188 page-furniture spans in this
 shape. This case requires an explicit decision about image and alt-text
 serialization rather than generic span-overlap handling.
 
-### Separate issue: typed text can flatten split Markdown links
+### Accepted CU issue: visually wrapped links are split
 
-For `text_simple__links`, the original comment contains adjacent Markdown links
-whose display labels form one URL:
+In `text_simple__links`, URLs that wrap across visual lines in the source PDF
+are emitted as adjacent Markdown links. The display labels are fragments of one
+URL, while both links use the same complete URL as their destination:
 
 ```markdown
 [.../p](.../publications) [ublications](.../publications)
 ```
 
-The typed CU paragraph content flattens that to:
+This also occurs outside page furniture:
+
+```markdown
+[http://www.iso.org/iso/home/standards/management-](.../management-standards/iso14000.htm)
+[standards/iso14000.htm](.../management-standards/iso14000.htm)
+```
+
+CU's typed paragraph content discards the link destinations and joins the
+display fragments with spaces:
 
 ```text
 .../p ublications
 ```
 
-The inserted space changes word and sentence matching. Unwrapping the original
-Markdown payload globally is not safe because link destinations can then be
-counted as additional text. Any repair should be limited to adjacent fragments
-that share the same destination and should be reviewed separately.
+The inserted space changes word and sentence matching. The span normalization
+only exposes this existing typed-content artifact; it does not create the
+split. Reconstructing URLs from adjacent links would be a provider-specific
+heuristic and could incorrectly join intentionally separate links. ParseBench
+therefore treats this as an upstream CU serialization bug and does not mitigate
+it in normalization.
 
 ### Broad prototype result
 
@@ -406,7 +422,8 @@ A structure-aware prototype that also moved page furniture outside images and
 repaired split links improved 29 cases, regressed 36 cases, and left 441 cases
 unchanged relative to the span-based production result. It fixed the main
 malformed-Markdown examples, but newly exposed image-wrapped furniture also
-created annotation penalties.
+created annotation penalties. The split-link reconstruction was not retained
+because it attempts to correct CU output rather than faithfully normalize it.
 
 For that reason, figure-alt handling and link reconstruction are intentionally
 not part of the overlap guard committed on this branch.

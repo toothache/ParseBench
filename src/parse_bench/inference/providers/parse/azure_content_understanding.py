@@ -784,6 +784,9 @@ def render_content_markdown(content: AnalysisContent) -> str:
             raise ValueError(f"CU {role} paragraph has no span")
         start = int(paragraph.span.offset)
         stop = start + int(paragraph.span.length)
-        edits.append((start, stop, paragraph.content or ""))
+        replacement = paragraph.content or ""
+        if replacement:
+            replacement = f" {replacement} "
+        edits.append((start, stop, replacement))
 
     return _apply_markdown_edits(md, edits)
