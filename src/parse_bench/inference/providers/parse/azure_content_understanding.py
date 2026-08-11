@@ -736,7 +736,7 @@ def render_content_markdown(content: AnalysisContent) -> str:
     if not md:
         return md
 
-    edits: list[tuple[int, int, str, str]] = []
+    edits: list[tuple[int, int, str]] = []
     for fig in getattr(content, "figures", None) or []:
         if fig.get("kind") != "chart" or fig.get("content") is None:
             continue
@@ -752,7 +752,7 @@ def render_content_markdown(content: AnalysisContent) -> str:
         stop = start + int(span["length"])
         caption = (fig.get("caption") or {}).get("content")
         replacement = f"{caption}\n\n{table}" if caption else table
-        edits.append((start, stop, replacement, "chart figure"))
+        edits.append((start, stop, replacement))
 
     for paragraph in getattr(content, "paragraphs", None) or []:
         role = paragraph.role
@@ -762,21 +762,10 @@ def render_content_markdown(content: AnalysisContent) -> str:
             raise ValueError(f"CU {role} paragraph has no span")
         start = int(paragraph.span.offset)
         stop = start + int(paragraph.span.length)
-        edits.append((start, stop, paragraph.content or "", f"{role} paragraph"))
-
-    ordered_edits = sorted(edits, key=lambda edit: (edit[0], edit[1]))
-    for index, (start, stop, _, source) in enumerate(ordered_edits):
-        if start < 0 or stop <= start or stop > len(md):
-            raise ValueError(f"CU {source} has invalid Markdown span [{start}, {stop}) for length {len(md)}")
-        if index and start < ordered_edits[index - 1][1]:
-            previous = ordered_edits[index - 1]
-            raise ValueError(
-                f"CU Markdown edits overlap: {previous[3]} [{previous[0]}, {previous[1]}) "
-                f"and {source} [{start}, {stop})"
-            )
+        edits.append((start, stop, paragraph.content or ""))
 
     # Apply back-to-front so all spans remain relative to the original Markdown.
-    for start, stop, replacement, _ in reversed(ordered_edits):
+    for start, stop, replacement in sorted(edits, key=lambda edit: edit[0], reverse=True):
         md = md[:start] + replacement + md[stop:]
 
     return md
