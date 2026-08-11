@@ -39,6 +39,7 @@ class EvaluationCLI:
         export_rule_csv: bool = True,
         export_markdown: bool = True,
         export_html: bool = True,
+        export_detailed_html: bool = True,
         verbose: bool = False,
         force: bool = False,
         multi_task: bool = True,
@@ -61,6 +62,7 @@ class EvaluationCLI:
             export_csv: Export results to CSV file (default: False)
             export_markdown: Export summary to markdown file (default: False)
             export_html: Export interactive HTML report (default: False)
+            export_detailed_html: Export the detailed HTML report when export_html is enabled
             export_rule_csv: Export normalized per-rule results CSV (default: True)
             verbose: Show detailed information about skipped results (default: False)
             force: Force re-evaluation even if results exist (default: False)
@@ -202,15 +204,16 @@ class EvaluationCLI:
                 html_path = export_html_report(summary, report_dir_path)
                 print(f"🌐 HTML report exported to: {html_path.resolve()}")
 
-                detailed_html_path = generate_detailed_html_report(
-                    summary,
-                    report_dir_path,
-                    output_dir=output_dir_path,
-                    test_cases_dir=test_cases_dir_path,
-                    pipeline_name=pipeline_name,
-                    group=group,
-                )
-                print(f"🌐 Detailed HTML report exported to: {detailed_html_path.resolve()}")
+                if export_detailed_html:
+                    detailed_html_path = generate_detailed_html_report(
+                        summary,
+                        report_dir_path,
+                        output_dir=output_dir_path,
+                        test_cases_dir=test_cases_dir_path,
+                        pipeline_name=pipeline_name,
+                        group=group,
+                    )
+                    print(f"🌐 Detailed HTML report exported to: {detailed_html_path.resolve()}")
 
             return 0
 
