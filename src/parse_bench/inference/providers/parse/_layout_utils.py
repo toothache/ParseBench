@@ -140,7 +140,7 @@ def split_pdf_to_pages(pdf_path: str) -> list[tuple[bytes, int, int]]:
         # Create a single-page PDF in memory
         dst = fitz.open()
         dst.insert_pdf(src, from_page=page_num, to_page=page_num)
-        pdf_bytes = dst.tobytes()
+        pdf_bytes = dst.tobytes(no_new_id=True)
         dst.close()
         results.append((pdf_bytes, int(rect.width), int(rect.height)))
     src.close()

@@ -341,7 +341,7 @@ class OpenAIProvider(Provider):
 
         except Exception as e:
             error_str = str(e).lower()
-            if any(kw in error_str for kw in ["timeout", "connection", "network"]):
+            if any(kw in error_str for kw in ["timeout", "timed out", "connection", "network"]):
                 raise ProviderTransientError(f"Transient error calling OpenAI API: {e}") from e
             if any(kw in error_str for kw in ["rate_limit", "rate limit", "429"]):
                 raise ProviderTransientError(f"Rate limited: {e}") from e
@@ -391,7 +391,7 @@ class OpenAIProvider(Provider):
 
         except Exception as e:
             error_str = str(e).lower()
-            if any(kw in error_str for kw in ["timeout", "connection", "network"]):
+            if any(kw in error_str for kw in ["timeout", "timed out", "connection", "network"]):
                 raise ProviderTransientError(f"Transient error calling OpenAI API: {e}") from e
             if any(kw in error_str for kw in ["rate_limit", "rate limit", "429"]):
                 raise ProviderTransientError(f"Rate limited: {e}") from e
@@ -449,7 +449,7 @@ class OpenAIProvider(Provider):
 
         except Exception as e:
             error_str = str(e).lower()
-            if any(kw in error_str for kw in ["timeout", "connection", "network"]):
+            if any(kw in error_str for kw in ["timeout", "timed out", "connection", "network"]):
                 raise ProviderTransientError(f"Transient error calling OpenAI API: {e}") from e
             if any(kw in error_str for kw in ["rate_limit", "rate limit", "429"]):
                 raise ProviderTransientError(f"Rate limited: {e}") from e
@@ -500,7 +500,7 @@ class OpenAIProvider(Provider):
 
         except Exception as e:
             error_str = str(e).lower()
-            if any(kw in error_str for kw in ["timeout", "connection", "network"]):
+            if any(kw in error_str for kw in ["timeout", "timed out", "connection", "network"]):
                 raise ProviderTransientError(f"Transient error calling OpenAI API: {e}") from e
             if any(kw in error_str for kw in ["rate_limit", "rate limit", "429"]):
                 raise ProviderTransientError(f"Rate limited: {e}") from e
