@@ -112,11 +112,6 @@ class OpenAIProvider(Provider):
         """
         super().__init__(provider_name, base_config)
 
-        # Get API key from environment
-        self._api_key = os.environ.get("OPENAI_API_KEY")
-        if not self._api_key:
-            raise ProviderConfigError("OPENAI_API_KEY environment variable not set")
-
         # Configuration
         self._model = self.base_config.get("model", "gpt-5-mini")
         self._dpi = self.base_config.get("dpi", 150)
@@ -133,9 +128,45 @@ class OpenAIProvider(Provider):
 
         # Initialize OpenAI client
         try:
-            from openai import OpenAI
+            from openai import AzureOpenAI, OpenAI
 
-            self._client = OpenAI(api_key=self._api_key)
+            openai_api_key = os.environ.get("OPENAI_API_KEY")
+            azure_api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            if openai_api_key:
+                self._client = OpenAI(
+                    api_key=openai_api_key,
+                    timeout=self._timeout,
+                )
+            elif azure_api_key:
+                endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+                deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME")
+                missing = [
+                    name
+                    for name, value in (
+                        ("AZURE_OPENAI_ENDPOINT", endpoint),
+                        ("AZURE_OPENAI_DEPLOYMENT_NAME", deployment),
+                    )
+                    if not value
+                ]
+                if missing:
+                    raise ProviderConfigError(
+                        "Missing Azure OpenAI configuration: " + ", ".join(missing)
+                    )
+                self._client = AzureOpenAI(
+                    api_key=azure_api_key,
+                    api_version=os.environ.get(
+                        "AZURE_OPENAI_API_VERSION",
+                        "2024-10-21",
+                    ),
+                    azure_endpoint=endpoint,
+                    azure_deployment=deployment,
+                    timeout=self._timeout,
+                )
+            else:
+                raise ProviderConfigError(
+                    "OPENAI_API_KEY or AZURE_OPENAI_API_KEY environment "
+                    "variable not set"
+                )
         except ImportError as e:
             raise ProviderConfigError("openai package not installed. Run: pip install openai") from e
 
