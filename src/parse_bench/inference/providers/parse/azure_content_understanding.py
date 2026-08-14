@@ -74,7 +74,6 @@ CU_LABEL_MAP: dict[str, str] = {
     "pageHeader": "Page-header",
     "pageFooter": "Page-footer",
     "footnote": "Footnote",
-    "pageNumber": "Page-footer",
 }
 
 # Default label for paragraphs without a recognized role.
@@ -86,6 +85,29 @@ _DEFAULT_PARAGRAPH_LABEL = "Text"
 _VIRTUAL_PAGE_DIM = 1000.0
 
 _PAGE_FURNITURE_ROLES = frozenset({"pageHeader", "pageFooter", "pageNumber"})
+
+
+def _resolve_paragraph_layout_label(
+    role: str | None,
+    source: str | None,
+    page_dims: dict[int, tuple[float, float]],
+) -> str:
+    if role != "pageNumber":
+        return (
+            CU_LABEL_MAP.get(role, _DEFAULT_PARAGRAPH_LABEL)
+            if role
+            else _DEFAULT_PARAGRAPH_LABEL
+        )
+    if not source:
+        return "Page-footer"
+
+    nums = [float(value) for value in source.split(";", 1)[0][2:-1].split(",")]
+    if len(nums) < 9:
+        return "Page-footer"
+    page_num, polygon = int(nums[0]), nums[1:9]
+    _, page_height = page_dims.get(page_num, (1.0, 1.0))
+    center_y = sum(polygon[1::2]) / 4 / page_height
+    return "Page-header" if center_y < 0.5 else "Page-footer"
 
 
 @register_provider("azure_content_understanding")
@@ -287,6 +309,46 @@ def _polygon_to_normalized_bbox(
     return (nx, ny, nw, nh)
 
 
+def _element_span_offset(element: Any) -> int | None:
+    """Return the element's first offset from the typed CU SDK model."""
+    span = getattr(element, "span", None)
+    offset = getattr(span, "offset", None)
+    return int(offset) if offset is not None else None
+
+
+def _figure_attribution_text(fig: Any, paragraphs: list[Any]) -> str:
+    """Return visible OCR text for layout attribution.
+
+    ``figure.content`` is optional analyzer-specific structured data, typically
+    a Chart.js object, and is absent from the prebuilt-layout analyzer. Paragraph
+    references provide plain OCR evidence consistently across CU analyzers.
+    """
+    text_parts: list[str] = []
+    seen_references: set[str] = set()
+    for reference in getattr(fig, "elements", None) or []:
+        if not isinstance(reference, str) or not reference.startswith("/paragraphs/"):
+            continue
+        if reference in seen_references:
+            continue
+        seen_references.add(reference)
+        index_text = reference.removeprefix("/paragraphs/")
+        if not index_text.isdigit():
+            logger.warning("Ignoring malformed CU figure paragraph reference: %s", reference)
+            continue
+        index = int(index_text)
+        if index >= len(paragraphs):
+            logger.warning("Ignoring out-of-range CU figure paragraph reference: %s", reference)
+            continue
+        text = getattr(paragraphs[index], "content", None)
+        if text:
+            text_parts.append(text)
+
+    if text_parts:
+        return " ".join(text_parts)
+    caption = getattr(fig, "caption", None)
+    return getattr(caption, "content", None) or ""
+
+
 def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPageIR]:
     """Build layout_pages from CU paragraphs/tables/figures for layout cross-eval.
 
@@ -308,13 +370,24 @@ def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPage
             height = float(page.height or 1.0)
             page_dims[pnum] = (width, height)
 
-    # (label, nx, ny, nw, nh, content, confidence) grouped by page.
-    pages_items: dict[int, list[tuple[str, float, float, float, float, str, float]]] = defaultdict(list)
+    # (order_key, label, nx, ny, nw, nh, content, confidence) grouped by page.
+    pages_items: dict[
+        int,
+        list[tuple[tuple[int, int, int, int], str, float, float, float, float, str, float]],
+    ] = defaultdict(list)
     page_headers: dict[int, list[str]] = defaultdict(list)
     page_footers: dict[int, list[str]] = defaultdict(list)
     page_numbers: dict[int, list[str]] = defaultdict(list)
 
-    def _add(label: str, source: str | None, text: str | None) -> int:
+    def _add(
+        label: str,
+        source: str | None,
+        text: str | None,
+        span_offset: int | None,
+        content_index: int,
+        element_index: int,
+        container_priority: int,
+    ) -> int:
         # Every layout element must carry a position; an empty source is a bug.
         if not source:
             raise ValueError(f"CU element '{label}' has no source polygon")
@@ -333,38 +406,67 @@ def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPage
         page_num, polygon = int(nums[0]), nums[1:9]
         pw, ph = page_dims.get(page_num, (1.0, 1.0))
         nx, ny, nw, nh = _polygon_to_normalized_bbox(polygon, pw, ph)
-        pages_items[page_num].append((label, nx, ny, nw, nh, text, 1.0))
+        first_offset = span_offset if span_offset is not None else 2**63 - 1
+        order_key = (content_index, first_offset, container_priority, element_index)
+        pages_items[page_num].append((order_key, label, nx, ny, nw, nh, text, 1.0))
         return page_num
 
-    for content in document_contents:
+    for content_index, content in enumerate(document_contents):
+        element_index = 0
+        paragraphs = list(content.paragraphs or [])
         # Paragraphs -> text / heading / header / footer elements.
-        for para in content.paragraphs or []:
+        for para in paragraphs:
             role = para.role
-            label = CU_LABEL_MAP.get(role, _DEFAULT_PARAGRAPH_LABEL) if role else _DEFAULT_PARAGRAPH_LABEL
-            page_num = _add(label, para.source, para.content)
+            label = _resolve_paragraph_layout_label(role, para.source, page_dims)
+            page_num = _add(
+                label,
+                para.source,
+                para.content,
+                _element_span_offset(para),
+                content_index,
+                element_index,
+                1,
+            )
+            element_index += 1
             text = para.content or ""
-            if role == "pageHeader" and text:
+            if label == "Page-header" and text:
                 page_headers[page_num].append(text)
-            elif role == "pageFooter" and text:
+            elif label == "Page-footer" and text:
                 page_footers[page_num].append(text)
-            elif role == "pageNumber" and text:
-                page_footers[page_num].append(text)
+            if role == "pageNumber" and text:
                 page_numbers[page_num].append(text)
 
         # Tables -> Table elements (CU table objects carry their own source).
         for table in content.tables or []:
             text = " ".join(cell.content for cell in (table.cells or []) if cell.content)
-            _add("Table", table.source, text)
+            _add(
+                "Table",
+                table.source,
+                text,
+                _element_span_offset(table),
+                content_index,
+                element_index,
+                0,
+            )
+            element_index += 1
 
         # Figures (charts/images) -> Picture elements.
         for fig in content.figures or []:
-            caption = fig.caption.content if fig.caption else None
-            _add("Picture", fig.source, caption)
+            _add(
+                "Picture",
+                fig.source,
+                _figure_attribution_text(fig, paragraphs),
+                _element_span_offset(fig),
+                content_index,
+                element_index,
+                0,
+            )
+            element_index += 1
 
     layout_pages: list[ParseLayoutPageIR] = []
     for page_num in sorted(pages_items.keys()):
         items: list[LayoutItemIR] = []
-        for label, nx, ny, nw, nh, text, confidence in pages_items[page_num]:
+        for _, label, nx, ny, nw, nh, text, confidence in sorted(pages_items[page_num]):
             seg = LayoutSegmentIR(x=nx, y=ny, w=nw, h=nh, confidence=confidence, label=label)
             norm = label.strip().lower()
             if norm == "table":
