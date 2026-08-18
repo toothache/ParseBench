@@ -508,7 +508,7 @@ def _build_layout_item(
 ) -> list[CULayoutItem]:
     element_type, index = _parse_element_reference(reference)
     collection = getattr(content, element_type, None)
-    if collection is None or index >= len(collection):
+    if collection is None or index < 0 or index >= len(collection):
         raise ValueError(f"CU element reference out of range: {reference}")
     if element_type == "paragraphs":
         return [_build_paragraph(index, content, page_dims)]
@@ -519,7 +519,7 @@ def _build_layout_item(
     return _build_section(index, content, page_dims)
 
 
-def _insert_page_furnitures(
+def _insert_page_furniture(
     items: list[CULayoutItem],
     content: DocumentContent,
     page_dims: dict[int, tuple[float, float]],
@@ -579,7 +579,7 @@ def _build_layout_pages(contents: list[AnalysisContent]) -> list[ParseLayoutPage
             layout_items = _build_layout_item("/sections/0", content, page_dims)
 
             # Insert remaining page furniture paragraphs (headers/footers/page numbers)
-            _insert_page_furnitures(layout_items, content, page_dims)
+            _insert_page_furniture(layout_items, content, page_dims)
 
         for item in layout_items:
             page_items[item.page_number].append(item.item)
